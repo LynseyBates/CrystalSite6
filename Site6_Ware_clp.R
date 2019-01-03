@@ -1,13 +1,15 @@
-#Get Site 6 ceramic decoration. Plot proportions by area. 
+#Get Site 6 ceramic ware types by area. Plot proportions by area. 
 #LB, 10.4.16
-#LB, 12.18.2018 update for SHA paper
+#LB, 12.18.2018
+#CLP, 12.31.2018 update for SHA paper
 
-setwd("P:/Quarter-44AB469/R code/Decoration")
+setwd("P:/SHA/2019/Ptacek, Arendt, and Neiman/Code")
 
 require(RPostgreSQL)
 require(tidyr)
 require(dplyr)
 require(ggplot2)
+library(viridis)
 
 # tell DBI which driver to use
 pgSQL <- dbDriver("PostgreSQL")
@@ -17,24 +19,20 @@ DRCcon<-dbConnect(pgSQL, host='drc.iath.virginia.edu', port='5432',
                   user='drcquery', password='!queryacct!')
 
 Site6cerm <-dbGetQuery(DRCcon,'
-                       SELECT
-                       "public"."tblContext"."QuadratID",
+SELECT
+"public"."tblContext"."QuadratID",
                        "public"."tblContext"."ProjectID",
                        "public"."tblCeramic"."Quantity",
-"public"."tblYesNo"."YesNo",
-"public"."tblCeramicWare"."Ware",
-"public"."tblCeramicGenre"."CeramicGenre"
-                    FROM
+                       "public"."tblCeramicWare"."Ware"
+                       FROM
                        "public"."tblContext"
                        INNER JOIN "public"."tblContextSample" ON "public"."tblContextSample"."ContextAutoID" = "public"."tblContext"."ContextAutoID"
                        INNER JOIN "public"."tblGenerateContextArtifactID" ON "public"."tblContextSample"."ContextSampleID" = "public"."tblGenerateContextArtifactID"."ContextSampleID"
                        INNER JOIN "public"."tblCeramic" ON "public"."tblCeramic"."GenerateContextArtifactID" = "public"."tblGenerateContextArtifactID"."GenerateContextArtifactID"
-INNER JOIN "public"."tblYesNo" ON "public"."tblCeramic"."DecorationYN" = "public"."tblYesNo"."YesNoID"
-INNER JOIN "public"."tblCeramicWare" ON "public"."tblCeramic"."WareID" = "public"."tblCeramicWare"."WareID"
-LEFT JOIN "public"."tblCeramicGenre" ON "public"."tblCeramic"."CeramicGenreID" = "public"."tblCeramicGenre"."CeramicGenreID"
-WHERE
-"public"."tblContext"."ProjectID" like \'106\' 
-')
+                       INNER JOIN "public"."tblCeramicWare" ON "public"."tblCeramic"."WareID" = "public"."tblCeramicWare"."WareID"
+                       WHERE
+                       "public"."tblContext"."ProjectID" LIKE \'106\'
+                       ')
 
 
 #Create new field for N and S
@@ -158,109 +156,40 @@ Site6cerm$area[Site6cerm$area == '018'] <- 'Buffer'
 Site6cerm$area[Site6cerm$area == '091'] <- 'Buffer'
 Site6cerm$area[Site6cerm$area == '107'] <- 'Buffer'
 
-#Reassign YN field to Dec and Undec
-Site6cerm$YesNo[Site6cerm$YesNo == 'Yes'] <- 'Dec'
-Site6cerm$YesNo[Site6cerm$YesNo == 'No'] <- 'Undec'
-
 # Remove blank quad IDs
 Site6cermX <- subset(Site6cerm, ! Site6cerm$QuadratID == '')
 
 
-###Result #1: Decoration Yes/No by North and South
-#Summarize Decoration YN by Area
-justYN<-aggregate(Site6cerm$Quantity, by=list(Site6cerm$area, Site6cerm$YesNo), FUN=sum)
-colnames(justYN)<- c("Area","DecoratedYN","Count")
+# Area subset
+Site6cerm2<-aggregate(Site6cermX$Quantity, by=list(Site6cermX$area, Site6cermX$Ware), FUN=sum)
+colnames(Site6cerm2)<- c("Area","Ware","Count")
 
-
-
-#write.csv(justYN, file='DecorationYN.csv')
-
-
-###Result #2: Decoration Yes/No and Ware Type by North and South
-
-#Create new field that combines decorationYN and ware type
-Site6cerm$WareDec <- paste(Site6cerm$Ware, Site6cerm$YesNo, sep="_")
-
-#Summarize by decorated and undecorated Ware Types
-wareYN<-aggregate(Site6cerm$Quantity, by=list(Site6cerm$area, Site6cerm$WareDec), FUN=sum)
-colnames(wareYN)<- c("Area","WareDec","Count")
-
-#write.csv(wareYN, file='WareDec.csv')
-
-###Result #3: Genre by Areas
-justgenre<-aggregate(Site6cermX$Quantity, by=list(Site6cermX$area, Site6cermX$CeramicGenre), FUN=sum)
-colnames(justgenre)<- c("Area","Genre","Count")
-
-#write.csv(justgenre, file='GenrebyNorthSouth.csv')
-
-###Result #4: Genre and Ware Type by Areas
-Site6cerm$WareGenre <- paste(Site6cerm$Ware, Site6cerm$CeramicGenre, sep="_")
-
-#Summarize by Genre and Ware Types
-waregenre<-aggregate(Site6cerm$Quantity, by=list(Site6cerm$area, Site6cerm$WareGenre), FUN=sum)
-colnames(waregenre)<- c("Area","WareGenre","Count")
-
-#write.csv(waregenre, file='WareGenre.csv')
-
-### Manipulate and Plot results of Result 3
-
-#Take out "not applicable" genre
-justgenreX <- subset(justgenre, ! justgenre$Genre  %in%  c('Not Applicable'))
-
-#Combine Genres into broader groupings
-
-justgenreX$Category[justgenreX$Genre == 'Barley'] <- 'Molded Edge'
-justgenreX$Category[justgenreX$Genre == 'Blue and Gray'] <- 'Blue and Gray'
-justgenreX$Category[justgenreX$Genre == 'Feather Edge'] <- 'Molded Edge'
-justgenreX$Category[justgenreX$Genre == 'Handpainted Blue'] <- 'Handpainted'
-justgenreX$Category[justgenreX$Genre == 'Molded Edge Decoration, other'] <- 'Molded Edge'
-justgenreX$Category[justgenreX$Genre == 'Overglaze, handpainted'] <- 'Over Glaze'
-justgenreX$Category[justgenreX$Genre == 'Handpainted, Polychrome Cool'] <- 'Handpainted'
-justgenreX$Category[justgenreX$Genre == 'Handpainted, Polychrome Other'] <- 'Handpainted'
-justgenreX$Category[justgenreX$Genre == 'Handpainted, Polychrome Warm'] <- 'Handpainted'
-justgenreX$Category[justgenreX$Genre == 'Royal Pattern'] <- 'Molded Edge'
-justgenreX$Category[justgenreX$Genre == 'Scratch Blue'] <- 'Scratch Blue'
-justgenreX$Category[justgenreX$Genre == 'Shell Edge, blue'] <- 'Shell Edge'
-justgenreX$Category[justgenreX$Genre == 'Shell Edge, green'] <- 'Shell Edge'
-justgenreX$Category[justgenreX$Genre == 'Shell Edge, unid.'] <- 'Shell Edge'
-justgenreX$Category[justgenreX$Genre == 'Slipware, factory made'] <- 'Factory Slip'
-justgenreX$Category[justgenreX$Genre == 'Sponge/Spatter'] <- 'Sponge/Spatter'
-justgenreX$Category[justgenreX$Genre == 'Transfer Print Over'] <- 'Printed over'
-justgenreX$Category[justgenreX$Genre == 'Transfer Print Under, black'] <- 'Printed under'
-justgenreX$Category[justgenreX$Genre == 'Transfer Print Under, blue'] <- 'Printed under'
-justgenreX$Category[justgenreX$Genre == 'Transfer Print Under, light blue'] <- 'Printed under'
-justgenreX$Category[justgenreX$Genre == 'Transfer Print Under, polychrome'] <- 'Printed under'
-
-# Create total sum of counts by Area
-justgenre2 <- justgenreX %>%
-  group_by(Area)%>%
-  summarise(totalArea = sum (Count))
+Site6cerm3<-aggregate(Site6cerm2$Count, by=list(Site6cerm2$Area), FUN=sum)
+colnames(Site6cerm3)<- c("Area","CountA")
 
 # Merge total counts file with previous data file
-justgenre3 <- merge(justgenre2, justgenreX, by="Area")
+Site6cerm4 <- merge(Site6cerm2, Site6cerm3, by="Area")
 
-# Remove genres with NA category
-justgenre4 <- filter(justgenre3, ! is.na(Category))
 
 # Create proportion column for category by total for each area
-justgenre5 <- mutate(justgenre4, prop = Count / totalArea)
+Site6cerm5 <- mutate(Site6cerm4, prop = Count / CountA)
 
 # Drop Buffer, Southeast, and Southwest from the data
-justgenre6 <- filter(justgenre5, Area=="North" | Area=="South")
+Site6cerm6 <- filter(Site6cerm5, Area=="North" | Area=="South")
+
 
 # Plot the results
-GenrePlot1 <- ggplot(justgenre6, aes(x=justgenre6$Category, y=justgenre6$prop, fill=justgenre6$Area)) +
+CeramicsPlot1 <- ggplot(Site6cerm6, aes(x=Site6cerm6$Ware, y=Site6cerm6$prop, fill=Site6cerm6$Area)) +
   geom_bar(color="black", stat="identity", position=position_dodge()) +
-#  theme_classic() +
-  labs(x="Genre", y="Proportion") +
-  ggtitle("Genre Proportion for Decorated Ceramics") +
-  theme(plot.title=element_text(size=rel(2), hjust=0.5),
-        axis.title=element_text(size=rel(2)),
-        axis.text=element_text(size=rel(1.5)), legend.text=element_text(size=rel(1.25)),
+  #  theme_classic() +
+  labs(x="Ware", y="Proportion") +
+  ggtitle("Ceramics Ware Type") +
+  theme(plot.title=element_text(size=rel(2), hjust=0.5),axis.title=element_text(size=rel(2)),
+        axis.text=element_text(size=rel(1.2), angle=60, hjust=1), legend.text=element_text(size=rel(1.25)),
         legend.title=element_text(size=rel(2)))+
   scale_fill_viridis(name="Area", discrete=TRUE)
 
-GenrePlot1
+CeramicsPlot1
 
 #save the plot for website chronology page/presentations
-ggsave("Site 6_GenreProportions.png", GenrePlot1, width=15, height=7.5, dpi=300)
+ggsave("Site 6_CeramicProportions.png", CeramicsPlot1, width=10, height=7.5, dpi=300)
